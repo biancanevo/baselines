@@ -361,12 +361,14 @@ class Logger(object):
             if isinstance(fmt, SeqWriter):
                 fmt.writeseq(map(str, args))
 
-def configure(dir=None, format_strs=None, comm=None):
+def configure(dir=None, format_strs=None, comm=None, env='openai', alg=''):
     """
     If comm is provided, average all numerical stats across that comm
     """
     if dir is None:
         dir = os.getenv('OPENAI_LOGDIR')
+    if dir is None:
+        dir = osp.join(os.getcwd(),'../logs',env, datetime.datetime.now().strftime("{alg}-%Y-%m-%d-%H-%M-%S-%f".format(alg=alg)))
     if dir is None:
         dir = osp.join(tempfile.gettempdir(),
             datetime.datetime.now().strftime("openai-%Y-%m-%d-%H-%M-%S-%f"))
@@ -385,7 +387,7 @@ def configure(dir=None, format_strs=None, comm=None):
 
     if format_strs is None:
         if rank == 0:
-            format_strs = os.getenv('OPENAI_LOG_FORMAT', 'stdout,log,csv').split(',')
+            format_strs = os.getenv('OPENAI_LOG_FORMAT', 'stdout,tensorboard').split(',')
         else:
             format_strs = os.getenv('OPENAI_LOG_FORMAT_MPI', 'log').split(',')
     format_strs = filter(None, format_strs)

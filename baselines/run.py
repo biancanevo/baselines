@@ -6,6 +6,7 @@ import gym
 from collections import defaultdict
 import tensorflow as tf
 import numpy as np
+import random
 
 from baselines.common.vec_env import VecFrameStack, VecNormalize, VecEnv
 from baselines.common.vec_env.vec_video_recorder import VecVideoRecorder
@@ -13,6 +14,9 @@ from baselines.common.cmd_util import common_arg_parser, parse_unknown_args, mak
 from baselines.common.tf_util import get_session
 from baselines import logger
 from importlib import import_module
+
+import threading, time
+from baselines.common.tf_util import *
 
 try:
     from mpi4py import MPI
@@ -47,7 +51,10 @@ _game_envs['retro'] = {
     'Vectorman-Genesis',
     'FinalFight-Snes',
     'SpaceInvaders-Snes',
+    'StreetFighterIISpecialChampionEdition-Genesis'
 }
+
+
 
 
 def train(args, extra_args):
@@ -70,6 +77,9 @@ def train(args, extra_args):
     else:
         if alg_kwargs.get('network') is None:
             alg_kwargs['network'] = get_default_network(env_type)
+    #alg_kwargs['checkpoint_freq'] = args.checkpoint_interval
+    #alg_kwargs['save_interval']  = args.checkpoint_interval
+    #alg_kwargs['checkpoint_path'] = args.save_path
 
     print('Training {} on {}:{} with arguments \n{}'.format(args.alg, env_type, env_id, alg_kwargs))
 
@@ -78,6 +88,7 @@ def train(args, extra_args):
         seed=seed,
         total_timesteps=total_timesteps,
         **alg_kwargs
+        #,print_freq=args.log_interval
     )
 
     return model, env
@@ -89,18 +100,19 @@ def build_env(args):
     nenv = args.num_env or ncpu
     alg = args.alg
     seed = args.seed
-
+    render = args.render
     env_type, env_id = get_env_type(args)
 
     if env_type in {'atari', 'retro'}:
         if alg == 'deepq':
-            env = make_env(env_id, env_type, seed=seed, wrapper_kwargs={'frame_stack': True})
+            env = make_env(env_id, env_type, seed=seed, wrapper_kwargs={'frame_stack': args.frame_stack}, render=render)
         elif alg == 'trpo_mpi':
-            env = make_env(env_id, env_type, seed=seed)
+            env = make_env(env_id, env_type, seed=seed, render=render)
         else:
-            frame_stack_size = 4
-            env = make_vec_env(env_id, env_type, nenv, seed, gamestate=args.gamestate, reward_scale=args.reward_scale)
+            frame_stack_size = args.frame_stack
+            env = make_vec_env(env_id, env_type, nenv, seed, gamestate=args.gamestate, reward_scale=args.reward_scale, render=render)
             env = VecFrameStack(env, frame_stack_size)
+
 
     else:
         config = tf.ConfigProto(allow_soft_placement=True,
@@ -195,6 +207,41 @@ def parse_cmdline_kwargs(args):
 
 def main(args):
     # configure logger, disable logging in child MPI processes (with rank > 0)
+    #if not args:
+    args.append('--alg')
+    args.append('ppo2')
+    args.append('--env')
+    args.append('StreetFighterIISpecialChampionEdition-Genesis')
+    args.append('--env_type')
+    args.append('retro')
+    args.append('--save_path')
+    args.append('./saved_models/sfII_ppo2_model.pkl')
+    args.append('--num_timesteps')
+    args.append('1e7')
+    args.append('--log_interval')
+    args.append('100')
+    args.append('--checkpoint_interval')
+    args.append('100')
+    args.append('--save_interval')
+    args.append('1000')
+    args.append('--seed')
+    args.append(str(random.randrange(2**32-1)))
+    args.append('--network')
+    args.append('cnn_lstm') #network type (mlp, cnn, lstm, cnn_lstm, conv_only)
+    #args.append('--num_env')#muber of parallelenvironments defaults to numberof processors
+    #args.append('1')
+    #args.append('--gamestate')
+    #args.append(None)
+    #args.append('--reward_scale')
+    #args.append('1.0')
+    args.append('--save_video_interval')
+    args.append('0')
+    args.append('--save_video_length')
+    args.append('200')
+    #args.append("--frame_stack")
+    #args.append('25')
+    #args.append('--play')
+    args.append('--render')
 
     arg_parser = common_arg_parser()
     args, unknown_args = arg_parser.parse_known_args(args)
@@ -202,10 +249,20 @@ def main(args):
 
     if MPI is None or MPI.COMM_WORLD.Get_rank() == 0:
         rank = 0
-        logger.configure()
+        logger.configure(alg=args.alg, env=args.env)
     else:
         logger.configure(format_strs=[])
         rank = MPI.COMM_WORLD.Get_rank()
+
+    def start_tensorboard(session):
+        time.sleep(10) # Wait until graph is setup
+        tb_path = osp.join(logger.get_dir(), 'tb')
+        summary_writer = tf.summary.FileWriter(tb_path, graph=session.graph)
+        summary_op = tf.summary.merge_all()
+        #launch_tensorboard_in_background(tb_path)
+    #session = get_session()
+    #t = threading.Thread(target=start_tensorboard, args=([session]))
+    #t.start()
 
     model, env = train(args, extra_args)
 

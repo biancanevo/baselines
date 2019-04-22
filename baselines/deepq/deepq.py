@@ -256,7 +256,6 @@ def learn(env,
             load_variables(load_path)
             logger.log('Loaded model from {}'.format(load_path))
 
-
         for t in range(total_timesteps):
             if callback is not None:
                 if callback(locals(), globals()):
@@ -280,12 +279,15 @@ def learn(env,
             env_action = action
             reset = False
             new_obs, rew, done, _ = env.step(env_action)
+            #if rew!=0:
+            #    print("Action: ",env_action, "Meaning: ",env.get_action_meaning(env_action), "Reward :",rew)
             # Store transition in the replay buffer.
             replay_buffer.add(obs, action, rew, new_obs, float(done))
             obs = new_obs
 
             episode_rewards[-1] += rew
             if done:
+                print("Episode Reward: ",episode_rewards[-1])
                 obs = env.reset()
                 episode_rewards.append(0.0)
                 reset = True

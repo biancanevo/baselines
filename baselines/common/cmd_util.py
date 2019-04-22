@@ -17,13 +17,15 @@ from baselines.common.atari_wrappers import make_atari, wrap_deepmind
 from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
 from baselines.common import retro_wrappers
+from baselines.common import SFII_wrapper
 
 def make_vec_env(env_id, env_type, num_env, seed,
                  wrapper_kwargs=None,
                  start_index=0,
                  reward_scale=1.0,
                  flatten_dict_observations=True,
-                 gamestate=None):
+                 gamestate=None,
+                 render=False):
     """
     Create a wrapped, monitored SubprocVecEnv for Atari and MuJoCo.
     """
@@ -42,7 +44,8 @@ def make_vec_env(env_id, env_type, num_env, seed,
             gamestate=gamestate,
             flatten_dict_observations=flatten_dict_observations,
             wrapper_kwargs=wrapper_kwargs,
-            logger_dir=logger_dir
+            logger_dir=logger_dir,
+            render=render
         )
 
     set_global_seeds(seed)
@@ -52,7 +55,7 @@ def make_vec_env(env_id, env_type, num_env, seed,
         return DummyVecEnv([make_thunk(start_index)])
 
 
-def make_env(env_id, env_type, mpi_rank=0, subrank=0, seed=None, reward_scale=1.0, gamestate=None, flatten_dict_observations=True, wrapper_kwargs=None, logger_dir=None):
+def make_env(env_id, env_type, mpi_rank=0, subrank=0, seed=None, reward_scale=1.0, gamestate=None, flatten_dict_observations=True, wrapper_kwargs=None, logger_dir=None, render=False):
     wrapper_kwargs = wrapper_kwargs or {}
     if env_type == 'atari':
         env = make_atari(env_id)
@@ -76,12 +79,16 @@ def make_env(env_id, env_type, mpi_rank=0, subrank=0, seed=None, reward_scale=1.
         env = wrap_deepmind(env, **wrapper_kwargs)
     elif env_type == 'retro':
         if 'frame_stack' not in wrapper_kwargs:
-            wrapper_kwargs['frame_stack'] = 1
+            wrapper_kwargs['frame_stack'] = 4
         env = retro_wrappers.wrap_deepmind_retro(env, **wrapper_kwargs)
+        if env_id == 'StreetFighterIISpecialChampionEdition-Genesis':
+            # env = SFII_wrapper.SFIIActionWrapper(env)
+            env = SFII_wrapper.EnvStreetFighterII(env)
+    if render:
+        env = retro_wrappers.RenderEnv(env)
 
     if reward_scale != 1:
         env = retro_wrappers.RewardScaler(env, reward_scale)
-
     return env
 
 
@@ -147,9 +154,14 @@ def common_arg_parser():
     parser.add_argument('--num_env', help='Number of environment copies being run in parallel. When not specified, set to number of cpus for Atari, and to 1 for Mujoco', default=None, type=int)
     parser.add_argument('--reward_scale', help='Reward scale factor. Default: 1.0', default=1.0, type=float)
     parser.add_argument('--save_path', help='Path to save trained model to', default=None, type=str)
+    parser.add_argument('--checkpoint_interval', help='Save trained modelafter each x episodes. Default 100', default=100, type=int)
     parser.add_argument('--save_video_interval', help='Save video every x steps (0 = disabled)', default=0, type=int)
     parser.add_argument('--save_video_length', help='Length of recorded video. Default: 200', default=200, type=int)
     parser.add_argument('--play', default=False, action='store_true')
+    parser.add_argument('--render', default=False, action='store_true', help='Render gameduring playing')
+    parser.add_argument('--log_interval', type=int, default=100, help='Log each x episodes. Default 100')
+    parser.add_argument('--frame_stack', type=int, default=4, help='Number of stacked frames. Default 4')
+
     return parser
 
 def robotics_arg_parser():

@@ -199,6 +199,14 @@ class StartDoingRandomActionsWrapper(gym.Wrapper):
                 self.some_random_steps()
         return self.last_obs, rew, done, info
 
+class RenderEnv(gym.Wrapper):
+    def __init__(self, env):
+        gym.Wrapper.__init__(self, env)
+
+    def step(self, action):
+        self.env.render()
+        return self.env.step(action)
+
 def make_retro(*, game, state=None, max_episode_steps=4500, **kwargs):
     import retro
     if state is None:
